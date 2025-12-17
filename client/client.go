@@ -113,7 +113,6 @@ func ConnectToWebSocket() error {
 
 			if eventUpdate.Symbol != "" {
 				if firstEntryMap[eventUpdate.Symbol] {
-					fmt.Printf("Received first websocket message for currency %s \n", eventUpdate.Symbol)
 					firstUpdateId := eventUpdate.FirstUpdateId
 					fmt.Printf("first update Id %d for currency %s \n ", firstUpdateId, eventUpdate.Symbol)
 					firstEntryMap[eventUpdate.Symbol] = false
@@ -126,7 +125,6 @@ func ConnectToWebSocket() error {
 
 			if subscriptionsList.Id != 0 {
 				fmt.Println("admin message received: ", string(message))
-				fmt.Println("list subs req id: ", listSubscReqId)
 				if subscriptionsList.Id == listSubscReqId {
 					fmt.Println("sending subs list to channel ", subscriptionsList.Result)
 					listSubscriptions <- subscriptionsList.Result
@@ -135,9 +133,6 @@ func ConnectToWebSocket() error {
 		}
 		return nil
 	})
-	// go func() {
-
-	// }()
 
 	err = SubscribeToCurrPair(ctx, mainCurrencyPair)
 	if err != nil {
@@ -236,7 +231,6 @@ func CloseConnection() {
 
 func getMarketDepth(ctx context.Context, currPair string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(snapshotURL, currPair), nil)
-	// resp, err := http.Get(fmt.Sprintf(snapshotURL, currPair))
 	if err != nil {
 		log.Printf("Error on Creating New GET Request for curr paid %s\n", currPair)
 		return err
@@ -266,7 +260,6 @@ func getMarketDepth(ctx context.Context, currPair string) error {
 
 	lastUpdateId := snapshot.LastUpdateId
 	lastUpdateIds[currPair] = lastUpdateId
-	fmt.Printf("lastUpdateId for currency pair %s : %d: \n", currPair, lastUpdateIds[currPair])
 
 	firstUpdateId := <-updateIdChan
 	fmt.Printf("last update id for currency pair %s : %d first update id %d \n", currPair, lastUpdateId, firstUpdateId)
