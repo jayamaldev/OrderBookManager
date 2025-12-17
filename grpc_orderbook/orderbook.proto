@@ -1,0 +1,43 @@
+syntax = "proto3";
+option go_package = "order-book-manager/grpc_orderbook";
+
+message SubscribeOrderBookRequest {
+  string currPair = 1;
+}
+
+message UnsubscribeOrderBookRequest {
+  string currPair = 1;
+}
+
+message GetOrderBookRequest {
+  string currPair = 1;
+}
+
+message SubscribeOrderBookResponse {
+  string message = 1;
+}
+
+message UnsubscribeOrderBookResponse {
+  string message = 1;
+}
+
+message GetOrderBookResponse {
+  string orderbook = 1;
+}
+
+message ListSubscriptionsRequest {}
+
+message ListSubscriptionsResponse {
+  repeated SubscriptionPair subscriptions = 1;
+}
+
+message SubscriptionPair {
+  string subscription = 1;
+}
+
+service OrderBook {
+  rpc SubscribeOrderBookForSymbol(SubscribeOrderBookRequest) returns (SubscribeOrderBookResponse) {}
+  rpc UnsubscribeOrderBookForSymbol(UnsubscribeOrderBookRequest) returns (UnsubscribeOrderBookResponse) {}
+  rpc GetOrderBookForSymbol(GetOrderBookRequest) returns (GetOrderBookResponse) {}
+  rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse) {}
+}
