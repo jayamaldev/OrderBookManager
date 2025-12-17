@@ -7,13 +7,10 @@ import (
 	"order-book-manager/orderbook"
 	"order-book-manager/users"
 	"strings"
-	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
-var wg *sync.WaitGroup
-var wgCount int
 var SUBSCRIBE, UNSUBSCRIBE = "SUB", "UNSUB"
 
 func CreateServer() *http.Server {
@@ -23,19 +20,16 @@ func CreateServer() *http.Server {
 	}
 }
 
-func RunWSServer(server *http.Server) {
-	wg = new(sync.WaitGroup)
-
+func RunWSServer(server *http.Server) error {
 	http.HandleFunc("/ws", websocketHandler)
+	fmt.Println("Websocket Server started on :8080")
+	err := server.ListenAndServe()
+	if err != nil {
+		fmt.Println("Error on websocket Server: ", err)
+		return err
+	}
 
-	go func() {
-		fmt.Println("Websocket Server started on :8080")
-		err := server.ListenAndServe()
-		if err != nil {
-			fmt.Println("Error on websocket Server: ", err)
-		}
-	}()
-	wg.Wait()
+	return nil
 }
 
 func websocketHandler(w http.ResponseWriter, r *http.Request) {
@@ -45,14 +39,11 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wgCount++
-	wg.Add(wgCount)
-	go handleConnection(conn, wgCount)
+	go handleConnection(conn)
 }
 
-func handleConnection(conn *websocket.Conn, number int) {
+func handleConnection(conn *websocket.Conn) {
 	defer func() {
-		wg.Done()
 		users.RemoveUser(conn)
 		err := conn.Close()
 		if err != nil {
@@ -71,7 +62,7 @@ func handleConnection(conn *websocket.Conn, number int) {
 
 		msgArgs := strings.Split(string(message), " ")
 
-		fmt.Printf("Message Received: %s from %d \n", string(message), number)
+		fmt.Printf("Message Received: %s \n", string(message))
 
 		switch string(msgArgs[0]) {
 		case SUBSCRIBE:

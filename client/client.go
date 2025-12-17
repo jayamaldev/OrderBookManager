@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/sync/errgroup"
 )
 
 var conn *websocket.Conn
@@ -57,12 +59,14 @@ func SetCurrencyPair(currPair string) {
 	lastUpdateIds = make(map[string]int)
 }
 
-func ConnectToWebSocket() {
+func ConnectToWebSocket() error {
 	u := url.URL{
 		Scheme: WSS_STREAM,
 		Host:   BINANCE_URL,
 		Path:   WS_CONTEXT_ROOT,
 	}
+
+	g, ctx := errgroup.WithContext(context.Background())
 	fmt.Printf("connecting to websocket %s\n", u.String())
 
 	firstEntryMap = make(map[string]bool)
@@ -71,6 +75,7 @@ func ConnectToWebSocket() {
 	conn, _, err = websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		log.Fatal("Websocket connectivity issue", err)
+		return err
 	}
 	fmt.Printf("Connected to websocket %s\n", u.String())
 
@@ -81,7 +86,7 @@ func ConnectToWebSocket() {
 	defer close(bufferedEvents)
 	defer close(updateIdChan)
 
-	go func() {
+	g.Go(func() error {
 		defer close(done)
 
 		for {
@@ -91,7 +96,7 @@ func ConnectToWebSocket() {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
 				log.Println("Error on reading Websocket Message", err)
-				return
+				return err
 			}
 
 			err = json.Unmarshal(message, &eventUpdate)
@@ -128,15 +133,30 @@ func ConnectToWebSocket() {
 				}
 			}
 		}
-	}()
+		return nil
+	})
+	// go func() {
 
-	SubscribeToCurrPair(mainCurrencyPair)
+	// }()
+
+	err = SubscribeToCurrPair(ctx, mainCurrencyPair)
+	if err != nil {
+		return err
+	}
+
 	go updateEvents()
 	<-done
 	fmt.Println("Websocket Client Closed")
+
+	if err := g.Wait(); err != nil {
+		log.Println("Error on Websocket Client")
+		return err
+	}
+
+	return nil
 }
 
-func SubscribeToCurrPair(currencyPair string) {
+func SubscribeToCurrPair(ctx context.Context, currencyPair string) error {
 	depthRequest := fmt.Sprintf(depthStr, strings.ToLower(currencyPair))
 	subscriptionRequest := SUbscriptionRequest{
 		Method: SUBSCRIBE,
@@ -158,7 +178,7 @@ func SubscribeToCurrPair(currencyPair string) {
 		fmt.Println("error on sending subscription request")
 	}
 
-	getMarketDepth(currencyPair)
+	return getMarketDepth(ctx, currencyPair)
 }
 
 func UnsubscribeToCurrPair(currencyPair string) {
@@ -214,11 +234,16 @@ func CloseConnection() {
 	}
 }
 
-func getMarketDepth(currPair string) {
-	resp, err := http.Get(fmt.Sprintf(snapshotURL, currPair))
+func getMarketDepth(ctx context.Context, currPair string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(snapshotURL, currPair), nil)
+	// resp, err := http.Get(fmt.Sprintf(snapshotURL, currPair))
 	if err != nil {
 		log.Printf("Error on Creating New GET Request for curr paid %s\n", currPair)
+		return err
 	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 
 	defer func() {
 		err := resp.Body.Close()
@@ -229,12 +254,14 @@ func getMarketDepth(currPair string) {
 
 	if resp.StatusCode != http.StatusOK {
 		log.Fatal(fmt.Sprintf("Error on Getting Snapshot for curr pair %s", currPair), err)
+		return err
 	}
 
 	var snapshot *dtos.Snapshot
 	err = json.NewDecoder(resp.Body).Decode(&snapshot)
 	if err != nil {
 		log.Fatal(fmt.Sprintf("Cound not parse Response Json for curr pair %s", currPair), err)
+		return err
 	}
 
 	lastUpdateId := snapshot.LastUpdateId
@@ -247,10 +274,11 @@ func getMarketDepth(currPair string) {
 		fmt.Printf("Condition Satisfied for curr pair %s !! \n", currPair)
 	} else {
 		fmt.Printf("Closing the Application. Re-get snapshot for currency pair %s\n", currPair)
-		return
+		return err
 	}
 
 	orderbook.PopulateOrderBook(currPair, snapshot)
+	return nil
 }
 
 func updateEvents() {

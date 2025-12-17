@@ -7,6 +7,7 @@ require github.com/gorilla/websocket v1.5.3
 require (
 	github.com/emirpasic/gods v1.18.1
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/sync v0.19.0
 	google.golang.org/grpc v1.77.0
 	google.golang.org/protobuf v1.36.11
 )
