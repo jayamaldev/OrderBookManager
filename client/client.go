@@ -78,6 +78,9 @@ func ConnectToWebSocket() {
 	updateIdChan = make(chan int)
 	bufferedEvents = make(chan dtos.EventUpdate, 1000)
 
+	defer close(bufferedEvents)
+	defer close(updateIdChan)
+
 	go func() {
 		defer close(done)
 
@@ -128,7 +131,7 @@ func ConnectToWebSocket() {
 	}()
 
 	SubscribeToCurrPair(mainCurrencyPair)
-
+	go updateEvents()
 	<-done
 	fmt.Println("Websocket Client Closed")
 }
@@ -156,8 +159,6 @@ func SubscribeToCurrPair(currencyPair string) {
 	}
 
 	getMarketDepth(currencyPair)
-
-	go updateEvents(currencyPair, bufferedEvents)
 }
 
 func UnsubscribeToCurrPair(currencyPair string) {
@@ -252,10 +253,11 @@ func getMarketDepth(currPair string) {
 	orderbook.PopulateOrderBook(currPair, snapshot)
 }
 
-func updateEvents(currPair string, bufferedEvents <-chan dtos.EventUpdate) {
-	fmt.Printf("Event Processor Started for curr pair %s \n", currPair)
+func updateEvents() {
+	fmt.Println("Event Processor Started")
 	for {
 		eventUpdate := <-bufferedEvents
+		currPair := eventUpdate.Symbol
 		if eventUpdate.FinalUpdateId > lastUpdateIds[currPair] {
 			//process this
 			if eventUpdate.EventType == depthUpdateEvent {
