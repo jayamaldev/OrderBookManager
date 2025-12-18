@@ -45,7 +45,18 @@ func PopulateOrderBook(currPair string, snapshot *dtos.Snapshot) {
 	orderBook := orderBookMap[currPair]
 
 	// process bids
-	for _, bidEntry := range snapshot.Bids {
+	processBids(snapshot.Bids, orderBook)
+
+	// process asks
+	processAsks(snapshot.Asks, orderBook)
+
+	PrintBids(currPair)
+	PrintAsks(currPair)
+}
+
+// proceess bids from the snapshot and populate order book
+func processBids(snapshotBids [][]string, orderBook OrderBook) {
+	for _, bidEntry := range snapshotBids {
 		priceVal, err := strconv.ParseFloat(bidEntry[0], 64)
 		if err != nil {
 			log.Println("Error on Parsing Bid Entry Price")
@@ -58,9 +69,11 @@ func PopulateOrderBook(currPair string, snapshot *dtos.Snapshot) {
 
 		orderBook.Bids.Put(priceVal, qtyVal)
 	}
+}
 
-	// process asks
-	for _, askEntry := range snapshot.Asks {
+// proceess asks from the snapshot and populate order book
+func processAsks(snapshotAsks [][]string, orderBook OrderBook) {
+	for _, askEntry := range snapshotAsks {
 		priceVal, err := strconv.ParseFloat(askEntry[0], 64)
 		if err != nil {
 			log.Println("Error on Parsing Ask Entry Price")
@@ -73,9 +86,6 @@ func PopulateOrderBook(currPair string, snapshot *dtos.Snapshot) {
 
 		orderBook.Asks.Put(priceVal, qtyVal)
 	}
-
-	PrintBids(currPair)
-	PrintAsks(currPair)
 }
 
 func UpdateBids(currPair string, price, qty float64) {

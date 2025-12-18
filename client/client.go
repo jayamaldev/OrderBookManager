@@ -27,9 +27,7 @@ import (
 
 var conn *websocket.Conn
 var lastUpdateIds map[string]int
-var depthUpdateEvent = "depthUpdate"
-var snapshotURL = "https://api.binance.com/api/v3/depth?symbol=%s&limit=50"
-var depthStr = "%s@depth"
+
 var mainCurrencyPair string
 var updateIdChan chan int
 var bufferedEvents chan dtos.EventUpdate
@@ -38,8 +36,15 @@ var firstEntryMap map[string]bool
 var uniqueReqId int
 var mutex sync.Mutex
 var listSubscReqId int
-var SUBSCRIBE, UNSUBSCRIBE, LIST_SUBSCRIPTIONS = "SUBSCRIBE", "UNSUBSCRIBE", "LIST_SUBSCRIPTIONS"
-var WSS_STREAM, BINANCE_URL, WS_CONTEXT_ROOT = "wss", "stream.binance.com:9443", "/ws"
+
+var snapshotURL = "https://api.binance.com/api/v3/depth?symbol=%s&limit=50"
+var depthStr = "%s@depth"
+
+const (
+	subscribe, unsubscribe, listSubscriptionsConst = "SUBSCRIBE", "UNSUBSCRIBE", "LIST_SUBSCRIPTIONS"
+	wssStream, binanceUrl, wsContextRoot           = "wss", "stream.binance.com:9443", "/ws"
+	depthUpdateEvent                               = "depthUpdate"
+)
 
 // Subscription/Unsubscription Request to the Binance to Subscribe for a Currecy Pair
 type SubscriptionRequest struct {
@@ -74,9 +79,9 @@ This starts the message reader as well
 */
 func ConnectToWebSocket() error {
 	u := url.URL{
-		Scheme: WSS_STREAM,
-		Host:   BINANCE_URL,
-		Path:   WS_CONTEXT_ROOT,
+		Scheme: wssStream,
+		Host:   binanceUrl,
+		Path:   wsContextRoot,
 	}
 
 	g, ctx := errgroup.WithContext(context.Background())
@@ -101,57 +106,7 @@ func ConnectToWebSocket() error {
 
 	g.Go(func() error {
 		defer close(done)
-
-		for {
-			var eventUpdate dtos.EventUpdate
-			var subscriptionsList dtos.SubscriptionsList
-
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				log.Println("Error on reading Websocket Message", err)
-				return err
-			}
-
-			// market depth update
-			err = json.Unmarshal(message, &eventUpdate)
-			if err != nil {
-				fmt.Println("Error Parsing Json", err)
-				break
-			}
-
-			// subscription list response
-			err = json.Unmarshal(message, &subscriptionsList)
-			if err != nil {
-				fmt.Println("Error Parsing Subscriptions List Json", err)
-				break
-			}
-
-			// process only market depth updates
-			if eventUpdate.Symbol != "" {
-				if firstEntryMap[eventUpdate.Symbol] {
-					firstUpdateId := eventUpdate.FirstUpdateId
-					fmt.Printf("first update Id %d for currency %s \n ", firstUpdateId, eventUpdate.Symbol)
-					firstEntryMap[eventUpdate.Symbol] = false
-					updateIdChan <- firstUpdateId
-				}
-
-				// write to bufferedEvents channel so the Event Processor goroutine will read from channel
-				bufferedEvents <- eventUpdate
-
-				// push the event to subscribed users
-				users.PushEventToUsers(message, eventUpdate.Symbol)
-			}
-
-			// process list of subscription responses
-			if subscriptionsList.Id != 0 {
-				fmt.Println("admin message received: ", string(message))
-				if subscriptionsList.Id == listSubscReqId {
-					fmt.Println("sending subs list to channel ", subscriptionsList.Result)
-					listSubscriptions <- subscriptionsList.Result
-				}
-			}
-		}
-		return nil
+		return readAndProcessWSMessages()
 	})
 
 	err = SubscribeToCurrPair(ctx, mainCurrencyPair)
@@ -171,11 +126,79 @@ func ConnectToWebSocket() error {
 	return nil
 }
 
+func readAndProcessWSMessages() error {
+	for {
+		var eventUpdate dtos.EventUpdate
+		var subscriptionsList dtos.SubscriptionsList
+
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Println("Error on reading Websocket Message", err)
+			return err
+		}
+
+		// market depth update
+		err = json.Unmarshal(message, &eventUpdate)
+		if err != nil {
+			fmt.Println("Error Parsing Json", err)
+			break
+		}
+
+		// subscription list response
+		err = json.Unmarshal(message, &subscriptionsList)
+		if err != nil {
+			fmt.Println("Error Parsing Subscriptions List Json", err)
+			break
+		}
+
+		// process only market depth updates
+		processMarketDepthUpdate(eventUpdate, message)
+
+		// process list of subscription responses
+		processSubscriptionList(subscriptionsList, message)
+	}
+	return nil
+}
+
+// process only market depth updates
+func processMarketDepthUpdate(eventUpdate dtos.EventUpdate, message []byte) {
+	if eventUpdate.Symbol == "" {
+		// not an market depth update message
+		return
+	}
+
+	if firstEntryMap[eventUpdate.Symbol] {
+		firstUpdateId := eventUpdate.FirstUpdateId
+		fmt.Printf("first update Id %d for currency %s \n ", firstUpdateId, eventUpdate.Symbol)
+		firstEntryMap[eventUpdate.Symbol] = false
+		updateIdChan <- firstUpdateId
+	}
+
+	// write to bufferedEvents channel so the Event Processor goroutine will read from channel
+	bufferedEvents <- eventUpdate
+
+	// push the event to subscribed users
+	users.PushEventToUsers(message, eventUpdate.Symbol)
+}
+
+// process list of subscription responses
+func processSubscriptionList(subscriptionsList dtos.SubscriptionsList, message []byte) {
+	if subscriptionsList.Id == 0 {
+		// not an admin message
+		return
+	}
+	fmt.Println("admin message received: ", string(message))
+	if subscriptionsList.Id == listSubscReqId {
+		fmt.Println("sending subs list to channel ", subscriptionsList.Result)
+		listSubscriptions <- subscriptionsList.Result
+	}
+}
+
 // Subscribe to Currency Pair
 func SubscribeToCurrPair(ctx context.Context, currencyPair string) error {
 	depthRequest := fmt.Sprintf(depthStr, strings.ToLower(currencyPair))
 	subscriptionRequest := SubscriptionRequest{
-		Method: SUBSCRIBE,
+		Method: subscribe,
 		Params: []string{depthRequest},
 		Id:     getUniqueReqId(),
 	}
@@ -201,7 +224,7 @@ func SubscribeToCurrPair(ctx context.Context, currencyPair string) error {
 func UnsubscribeToCurrPair(currencyPair string) {
 	depthRequest := fmt.Sprintf(depthStr, strings.ToLower(currencyPair))
 	unsubscriptionRequest := SubscriptionRequest{
-		Method: UNSUBSCRIBE,
+		Method: unsubscribe,
 		Params: []string{depthRequest},
 		Id:     getUniqueReqId(),
 	}
@@ -227,7 +250,7 @@ func ListSubscriptions() []string {
 	listSubscriptions = make(chan []string)
 
 	listSubscriptionRequest := ListSubscriptionRequest{
-		Method: LIST_SUBSCRIPTIONS,
+		Method: listSubscriptionsConst,
 		Id:     listSubscReqId,
 	}
 
@@ -304,47 +327,62 @@ func updateEvents() {
 	for {
 		eventUpdate := <-bufferedEvents
 		currPair := eventUpdate.Symbol
-		if eventUpdate.FinalUpdateId > lastUpdateIds[currPair] {
-			// eligible event to process
-			if eventUpdate.EventType == depthUpdateEvent {
-				formattedText := fmt.Sprintf("processing event for curr pair: %s %d %d %s", currPair, eventUpdate.FirstUpdateId, eventUpdate.FinalUpdateId, time.Now())
-				fmt.Println(formattedText)
 
-				// process bids
-				for _, bidEntry := range eventUpdate.Bids {
-					priceVal, err := strconv.ParseFloat(bidEntry[0], 64)
-					if err != nil {
-						log.Printf("Error on Parsing Bid Entry Price for curr pair %s \n", currPair)
-					}
-
-					qtyVal, err := strconv.ParseFloat(bidEntry[1], 64)
-					if err != nil {
-						log.Printf("Error on Parsing Bid Entry Quantity for curr pair %s \n", currPair)
-					}
-
-					orderbook.UpdateBids(currPair, priceVal, qtyVal)
-				}
-
-				// process asks
-				for _, askEntry := range eventUpdate.Asks {
-					priceVal, err := strconv.ParseFloat(askEntry[0], 64)
-					if err != nil {
-						log.Printf("Error on Parsing Ask Entry Price for curr pair %s \n", currPair)
-					}
-
-					qtyVal, err := strconv.ParseFloat(askEntry[1], 64)
-					if err != nil {
-						log.Printf("Error on Parsing Ask Entry Quantity for curr pair %s \n", currPair)
-					}
-
-					orderbook.UpdateAsks(currPair, priceVal, qtyVal)
-				}
-
-				// update last update id of the orderbook
-				lastUpdateIds[currPair] = eventUpdate.FinalUpdateId
-			} else {
-				fmt.Printf("Event type for curr pair %s %s \n", currPair, eventUpdate.EventType)
-			}
+		if eventUpdate.FinalUpdateId <= lastUpdateIds[currPair] {
+			// not an eligible event to process
+			continue
 		}
+
+		if eventUpdate.EventType != depthUpdateEvent {
+			// Order Book Manager do not need to process these events
+			fmt.Printf("Event type for curr pair %s %s \n", currPair, eventUpdate.EventType)
+			continue
+		}
+
+		formattedText := fmt.Sprintf("processing event for curr pair: %s %d %d %s", currPair, eventUpdate.FirstUpdateId, eventUpdate.FinalUpdateId, time.Now())
+		fmt.Println(formattedText)
+
+		// process bids
+		processBids(eventUpdate.Bids, currPair)
+
+		// process asks
+		processAsks(eventUpdate.Asks, currPair)
+
+		// update last update id of the orderbook
+		lastUpdateIds[currPair] = eventUpdate.FinalUpdateId
+	}
+}
+
+// process bids and update order book from snapshot
+func processBids(bids [][]string, currPair string) {
+	for _, bidEntry := range bids {
+		priceVal, err := strconv.ParseFloat(bidEntry[0], 64)
+		if err != nil {
+			log.Printf("Error on Parsing Bid Entry Price for curr pair %s \n", currPair)
+		}
+
+		qtyVal, err := strconv.ParseFloat(bidEntry[1], 64)
+		if err != nil {
+			log.Printf("Error on Parsing Bid Entry Quantity for curr pair %s \n", currPair)
+		}
+
+		orderbook.UpdateBids(currPair, priceVal, qtyVal)
+	}
+}
+
+// process asks and update order book from snapshot
+func processAsks(asks [][]string, currPair string) {
+	for _, askEntry := range asks {
+		priceVal, err := strconv.ParseFloat(askEntry[0], 64)
+		if err != nil {
+			log.Printf("Error on Parsing Ask Entry Price for curr pair %s \n", currPair)
+		}
+
+		qtyVal, err := strconv.ParseFloat(askEntry[1], 64)
+		if err != nil {
+			log.Printf("Error on Parsing Ask Entry Quantity for curr pair %s \n", currPair)
+		}
+
+		orderbook.UpdateAsks(currPair, priceVal, qtyVal)
 	}
 }

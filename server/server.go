@@ -16,7 +16,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var SUBSCRIBE, UNSUBSCRIBE = "SUB", "UNSUB"
+const (
+	subscribe, unsubscribe = "SUB", "UNSUB"
+)
 
 func CreateServer() *http.Server {
 	return &http.Server{
@@ -72,19 +74,12 @@ func handleConnection(conn *websocket.Conn) {
 		fmt.Printf("Message Received: %s \n", string(message))
 
 		switch string(msgArgs[0]) {
-		case SUBSCRIBE:
+		case subscribe:
 			currPair := msgArgs[1]
-			fmt.Printf("Order Book Subscription Requested for curr pair %s\n", currPair)
-			err := conn.WriteMessage(websocket.TextMessage, orderbook.GetOrderBook(currPair))
-			if err != nil {
-				fmt.Println("Error Writing Message: ", err)
-			}
-
-			users.SubUser(conn, currPair, true)
-		case UNSUBSCRIBE:
+			handleSubscription(conn, currPair)
+		case unsubscribe:
 			currPair := msgArgs[1]
-			fmt.Printf("Order Book Unsubscription Requested for curr pair %s\n", currPair)
-			users.SubUser(conn, currPair, false)
+			handleUnsubscription(conn, currPair)
 		default:
 			fmt.Println("Unknown command received")
 			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
@@ -92,6 +87,21 @@ func handleConnection(conn *websocket.Conn) {
 			}
 		}
 	}
+}
+
+func handleSubscription(conn *websocket.Conn, currPair string) {
+	fmt.Printf("Order Book Subscription Requested for curr pair %s\n", currPair)
+	err := conn.WriteMessage(websocket.TextMessage, orderbook.GetOrderBook(currPair))
+	if err != nil {
+		fmt.Println("Error Writing Message: ", err)
+	}
+
+	users.SubUser(conn, currPair, true)
+}
+
+func handleUnsubscription(conn *websocket.Conn, currPair string) {
+	fmt.Printf("Order Book Unsubscription Requested for curr pair %s\n", currPair)
+	users.SubUser(conn, currPair, false)
 }
 
 var upgrader = websocket.Upgrader{

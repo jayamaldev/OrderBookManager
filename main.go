@@ -43,6 +43,23 @@ func main() {
 	grpcSvr := grpc.NewServer()
 
 	// start websocket client
+	startWSClientWithGroup(g)
+
+	// start websocket server
+	startWSServerWithGroup(ctx, g, srv)
+
+	// start grpc server to manage admin commands
+	startgRPCServerWithGroup(ctx, g, grpcSvr)
+
+	go gracefulShutdown(ctx, srv, grpcSvr)
+
+	if err := g.Wait(); err != nil {
+		fmt.Println("Received error from group:", err)
+	}
+}
+
+// start websocket client with error group
+func startWSClientWithGroup(g *errgroup.Group) {
 	g.Go(func() error {
 		if err := client.ConnectToWebSocket(); err != nil {
 			return fmt.Errorf("error on WS Client %s", err)
@@ -50,8 +67,10 @@ func main() {
 		fmt.Println("Websocket Client Initialized")
 		return nil
 	})
+}
 
-	// start websocket server
+// start websocket server with error group
+func startWSServerWithGroup(ctx context.Context, g *errgroup.Group, srv *http.Server) {
 	g.Go(func() error {
 		go func() {
 			<-ctx.Done()
@@ -70,8 +89,10 @@ func main() {
 		fmt.Println("Websocket Server Initialized")
 		return nil
 	})
+}
 
-	// start grpc server to manage admin commands
+// start websocket client with error group
+func startgRPCServerWithGroup(ctx context.Context, g *errgroup.Group, grpcSvr *grpc.Server) {
 	g.Go(func() error {
 		go func() {
 			<-ctx.Done()
@@ -85,14 +106,9 @@ func main() {
 		fmt.Println("grpc Server Initialized")
 		return nil
 	})
-
-	go gracefulShutdown(ctx, srv, grpcSvr)
-
-	if err := g.Wait(); err != nil {
-		fmt.Println("Received error from group:", err)
-	}
 }
 
+// start grpc server with error group
 func startGrpcServer(grpcSvr *grpc.Server) error {
 	lis, err := net.Listen("tcp", ":8081")
 	if err != nil {
@@ -121,11 +137,11 @@ func (s *grpcServer) SubscribeOrderBookForSymbol(ctx context.Context, request *g
 		return &grpc_orderbook.SubscribeOrderBookResponse{
 			Message: string(fmt.Sprintf("Subscription Failed to %s", request.CurrPair)),
 		}, subErr
-	} else {
-		return &grpc_orderbook.SubscribeOrderBookResponse{
-			Message: string(fmt.Sprintf("Subscribed to %s", request.CurrPair)),
-		}, nil
 	}
+
+	return &grpc_orderbook.SubscribeOrderBookResponse{
+		Message: string(fmt.Sprintf("Subscribed to %s", request.CurrPair)),
+	}, nil
 }
 
 // admin command using grpc server to unsubscribe for a currency pair with binance
