@@ -1,3 +1,9 @@
+/*
+package client acts as the client for the binance server.
+This calls the Binance API and manages the order book and market depth updates
+client will manage subscriptions for multiple currency pairs
+*/
+
 package client
 
 import (
@@ -35,17 +41,20 @@ var listSubscReqId int
 var SUBSCRIBE, UNSUBSCRIBE, LIST_SUBSCRIPTIONS = "SUBSCRIBE", "UNSUBSCRIBE", "LIST_SUBSCRIPTIONS"
 var WSS_STREAM, BINANCE_URL, WS_CONTEXT_ROOT = "wss", "stream.binance.com:9443", "/ws"
 
-type SUbscriptionRequest struct {
+// Subscription/Unsubscription Request to the Binance to Subscribe for a Currecy Pair
+type SubscriptionRequest struct {
 	Method string   `json:"method"`
 	Params []string `json:"params"`
 	Id     int      `json:"id"`
 }
 
+// Subscription List Request to get the Subscribed Currecy Pairs list from Binance
 type ListSubscriptionRequest struct {
 	Method string `json:"method"`
 	Id     int    `json:"id"`
 }
 
+// Function to get Unique request ID to send with Binance requests
 func getUniqueReqId() int {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -59,6 +68,10 @@ func SetCurrencyPair(currPair string) {
 	lastUpdateIds = make(map[string]int)
 }
 
+/*
+Setting up initial websocket connectivity with Binance and subscribe to the default currency pair.
+This starts the message reader as well
+*/
 func ConnectToWebSocket() error {
 	u := url.URL{
 		Scheme: WSS_STREAM,
@@ -99,18 +112,21 @@ func ConnectToWebSocket() error {
 				return err
 			}
 
+			// market depth update
 			err = json.Unmarshal(message, &eventUpdate)
 			if err != nil {
 				fmt.Println("Error Parsing Json", err)
 				break
 			}
 
+			// subscription list response
 			err = json.Unmarshal(message, &subscriptionsList)
 			if err != nil {
 				fmt.Println("Error Parsing Subscriptions List Json", err)
 				break
 			}
 
+			// process only market depth updates
 			if eventUpdate.Symbol != "" {
 				if firstEntryMap[eventUpdate.Symbol] {
 					firstUpdateId := eventUpdate.FirstUpdateId
@@ -119,10 +135,14 @@ func ConnectToWebSocket() error {
 					updateIdChan <- firstUpdateId
 				}
 
+				// write to bufferedEvents channel so the Event Processor goroutine will read from channel
 				bufferedEvents <- eventUpdate
+
+				// push the event to subscribed users
 				users.PushEventToUsers(message, eventUpdate.Symbol)
 			}
 
+			// process list of subscription responses
 			if subscriptionsList.Id != 0 {
 				fmt.Println("admin message received: ", string(message))
 				if subscriptionsList.Id == listSubscReqId {
@@ -151,9 +171,10 @@ func ConnectToWebSocket() error {
 	return nil
 }
 
+// Subscribe to Currency Pair
 func SubscribeToCurrPair(ctx context.Context, currencyPair string) error {
 	depthRequest := fmt.Sprintf(depthStr, strings.ToLower(currencyPair))
-	subscriptionRequest := SUbscriptionRequest{
+	subscriptionRequest := SubscriptionRequest{
 		Method: SUBSCRIBE,
 		Params: []string{depthRequest},
 		Id:     getUniqueReqId(),
@@ -176,9 +197,10 @@ func SubscribeToCurrPair(ctx context.Context, currencyPair string) error {
 	return getMarketDepth(ctx, currencyPair)
 }
 
+// UnSubscribe to Currency Pair
 func UnsubscribeToCurrPair(currencyPair string) {
 	depthRequest := fmt.Sprintf(depthStr, strings.ToLower(currencyPair))
-	unsubscriptionRequest := SUbscriptionRequest{
+	unsubscriptionRequest := SubscriptionRequest{
 		Method: UNSUBSCRIBE,
 		Params: []string{depthRequest},
 		Id:     getUniqueReqId(),
@@ -199,6 +221,7 @@ func UnsubscribeToCurrPair(currencyPair string) {
 	fmt.Println("Unsubscribed for ", currencyPair)
 }
 
+// List of Subscribtions
 func ListSubscriptions() []string {
 	listSubscReqId = getUniqueReqId()
 	listSubscriptions = make(chan []string)
@@ -229,6 +252,7 @@ func CloseConnection() {
 	}
 }
 
+// get the market depth for a currency pair and populate the order book
 func getMarketDepth(ctx context.Context, currPair string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(snapshotURL, currPair), nil)
 	if err != nil {
@@ -274,16 +298,19 @@ func getMarketDepth(ctx context.Context, currPair string) error {
 	return nil
 }
 
+// event processor to process market depth updates
 func updateEvents() {
 	fmt.Println("Event Processor Started")
 	for {
 		eventUpdate := <-bufferedEvents
 		currPair := eventUpdate.Symbol
 		if eventUpdate.FinalUpdateId > lastUpdateIds[currPair] {
-			//process this
+			// eligible event to process
 			if eventUpdate.EventType == depthUpdateEvent {
 				formattedText := fmt.Sprintf("processing event for curr pair: %s %d %d %s", currPair, eventUpdate.FirstUpdateId, eventUpdate.FinalUpdateId, time.Now())
 				fmt.Println(formattedText)
+
+				// process bids
 				for _, bidEntry := range eventUpdate.Bids {
 					priceVal, err := strconv.ParseFloat(bidEntry[0], 64)
 					if err != nil {
@@ -298,6 +325,7 @@ func updateEvents() {
 					orderbook.UpdateBids(currPair, priceVal, qtyVal)
 				}
 
+				// process asks
 				for _, askEntry := range eventUpdate.Asks {
 					priceVal, err := strconv.ParseFloat(askEntry[0], 64)
 					if err != nil {

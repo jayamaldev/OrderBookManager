@@ -17,7 +17,7 @@ var rootCmd = &cobra.Command{
 	Long:  `Order Book Manager is connected with Binance to get the latest currency updates and broadcast it to the subscribed users. Default Currency Pair BTCUSDT`,
 
 	Run: func(cmd *cobra.Command, args []string) {
-		client.SetCurrencyPair("BTCUSDT")
+		client.SetCurrencyPair("BTCUSDT") // default currency pair
 	},
 }
 

@@ -1,3 +1,4 @@
+// user handler package will manage the users and subscriptions they have
 package users
 
 import (
@@ -27,6 +28,7 @@ func AddUser(conn *websocket.Conn) {
 	usersList[conn] = user
 }
 
+// manage subscriptions and unsubscriptions
 func SubUser(conn *websocket.Conn, currPair string, subscribe bool) {
 	subUser := usersList[conn]
 	if subscribe {
@@ -45,6 +47,7 @@ func RemoveUser(conn *websocket.Conn) {
 	delete(usersList, conn)
 }
 
+// push market depth event to the subscribed users (subscribed to the given currency pair)
 func PushEventToUsers(message []byte, currPar string) {
 	for _, user := range usersList {
 		if slices.Contains(user.CurrPairs, currPar) {

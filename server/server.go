@@ -1,3 +1,8 @@
+/*
+server package starts a websocket server so that clients can connect
+clients can subscribe/unsubscribe with currency pairs so they will get the updates accordingly
+*/
+
 package server
 
 import (
@@ -42,6 +47,7 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 	go handleConnection(conn)
 }
 
+// this will start a separate go routine for each client socket connection
 func handleConnection(conn *websocket.Conn) {
 	defer func() {
 		users.RemoveUser(conn)
@@ -51,6 +57,7 @@ func handleConnection(conn *websocket.Conn) {
 		}
 	}()
 
+	// separate user for each connection to manage subscriptions
 	users.AddUser(conn)
 
 	for {

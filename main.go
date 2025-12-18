@@ -34,6 +34,7 @@ func main() {
 
 	fmt.Println("Welcome to Order Book Manager!")
 
+	// initiating error group for ws client, ws server and grpc server
 	g, ctx := errgroup.WithContext(context.Background())
 
 	users.InitUserList()
@@ -41,6 +42,7 @@ func main() {
 	srv := server.CreateServer()
 	grpcSvr := grpc.NewServer()
 
+	// start websocket client
 	g.Go(func() error {
 		if err := client.ConnectToWebSocket(); err != nil {
 			return fmt.Errorf("error on WS Client %s", err)
@@ -49,6 +51,7 @@ func main() {
 		return nil
 	})
 
+	// start websocket server
 	g.Go(func() error {
 		go func() {
 			<-ctx.Done()
@@ -68,6 +71,7 @@ func main() {
 		return nil
 	})
 
+	// start grpc server to manage admin commands
 	g.Go(func() error {
 		go func() {
 			<-ctx.Done()
@@ -108,6 +112,7 @@ func startGrpcServer(grpcSvr *grpc.Server) error {
 	return nil
 }
 
+// admin command using grpc server to subscribe for a currency pair with binance
 func (s *grpcServer) SubscribeOrderBookForSymbol(ctx context.Context, request *grpc_orderbook.SubscribeOrderBookRequest) (response *grpc_orderbook.SubscribeOrderBookResponse, err error) {
 	fmt.Println("Subscribe Order Book for ", request.CurrPair)
 
@@ -123,6 +128,7 @@ func (s *grpcServer) SubscribeOrderBookForSymbol(ctx context.Context, request *g
 	}
 }
 
+// admin command using grpc server to unsubscribe for a currency pair with binance
 func (s *grpcServer) UnsubscribeOrderBookForSymbol(ctx context.Context, request *grpc_orderbook.UnsubscribeOrderBookRequest) (response *grpc_orderbook.UnsubscribeOrderBookResponse, err error) {
 	fmt.Println("UnSubscribe Order Book for ", request.CurrPair)
 	client.UnsubscribeToCurrPair(request.CurrPair)
@@ -131,6 +137,7 @@ func (s *grpcServer) UnsubscribeOrderBookForSymbol(ctx context.Context, request 
 	}, nil
 }
 
+// admin command using grpc server to see the order book
 func (s *grpcServer) GetOrderBookForSymbol(ctx context.Context, request *grpc_orderbook.GetOrderBookRequest) (response *grpc_orderbook.GetOrderBookResponse, err error) {
 	fmt.Println("Get Order Book for ", request.CurrPair)
 	return &grpc_orderbook.GetOrderBookResponse{
@@ -138,6 +145,7 @@ func (s *grpcServer) GetOrderBookForSymbol(ctx context.Context, request *grpc_or
 	}, nil
 }
 
+// admin command using grpc server to see the list of subscriptions with binance
 func (s *grpcServer) ListSubscriptions(ctx context.Context, request *grpc_orderbook.ListSubscriptionsRequest) (response *grpc_orderbook.ListSubscriptionsResponse, err error) {
 	fmt.Println("Listing Subscriptions")
 	subsList := client.ListSubscriptions()

@@ -1,3 +1,5 @@
+// order book handler manages the order book using the snapshot and the market depth updates sent by the binance
+
 package orderbook
 
 import (
@@ -35,12 +37,14 @@ func RemoveOrderBookForCurrency(currPair string) {
 	delete(orderBookMap, currPair)
 }
 
+// populate order book for the given currency using the snapshot
 func PopulateOrderBook(currPair string, snapshot *dtos.Snapshot) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	orderBook := orderBookMap[currPair]
 
+	// process bids
 	for _, bidEntry := range snapshot.Bids {
 		priceVal, err := strconv.ParseFloat(bidEntry[0], 64)
 		if err != nil {
@@ -55,6 +59,7 @@ func PopulateOrderBook(currPair string, snapshot *dtos.Snapshot) {
 		orderBook.Bids.Put(priceVal, qtyVal)
 	}
 
+	// process asks
 	for _, askEntry := range snapshot.Asks {
 		priceVal, err := strconv.ParseFloat(askEntry[0], 64)
 		if err != nil {
@@ -131,6 +136,7 @@ func bidComparator(a, b interface{}) int {
 	return 0
 }
 
+// marshal the order book to a json string to sent to the subscribed client
 func GetOrderBook(currPair string) []byte {
 	mutex.Lock()
 	defer mutex.Unlock()
