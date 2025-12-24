@@ -1,3 +1,4 @@
 # Editor/IDE
-# .idea/
 .vscode/
+
+deployments/terraform/.terraform/
