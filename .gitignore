@@ -1,4 +1,7 @@
 # Editor/IDE
 .vscode/
 
+terraform.tfstate
 deployments/terraform/.terraform/
+deployments/terraform/terraform.tfstate
+deployments/terraform/terraform.tfstate.backup

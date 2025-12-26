@@ -1,0 +1,56 @@
+---
+- name: Configure EC2 instance
+  hosts: order_book_server
+  become: true
+  tasks:
+    - name: Install telnet Tools
+      ansible.builtin.yum:
+        name: telnet
+        state: present
+
+- name: Configure and Run Docker Container
+  hosts: order_book_server 
+  remote_user: ec2-user
+  become: true
+  tasks:
+    - name: Install Docker on EC2
+      ansible.builtin.package:
+        name: docker
+        state: present
+
+    - name: Start and enable Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: yes
+
+
+- name: Install and Configure MicroK8s
+  hosts: order_book_server
+  become: true
+  tasks:
+    - name: Install MicroK8s via Snap
+      snap:
+        name: microk8s
+        classic: yes
+        channel: 1.35/stable
+
+    - name: Waiting for Ready MicroK8s
+      command: microk8s status --wait-ready
+      changed_when: false
+
+    - name: Add ec2-user to microk8s user group
+      user:
+        name: ec2-user
+        groups: microk8s
+        append: yes
+
+    - name: Fix Permissions on kube folder
+      file:
+        path: "/home/ec2-user/.kube"
+        state: directory
+        owner: ec2-user
+        group: microk8s
+        mode: '0700'
+
+

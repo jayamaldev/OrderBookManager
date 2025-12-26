@@ -144,6 +144,20 @@ resource "aws_security_group" "jayamal_app_sg" {
         cidr_blocks = ["10.0.1.0/24"]
     }
 
+    ingress { // to allow internal self routes for k8s
+        from_port = 0
+        to_port = 0
+        protocol = "-1"
+        self = true
+    }
+
+    ingress { // to run kubectl commands from local machine
+        from_port = 16443
+        to_port = 16443
+        protocol = "tcp"
+        cidr_blocks = ["10.0.1.0/24"]
+    }
+
     egress {
         from_port = 0
         to_port = 0
@@ -180,6 +194,10 @@ resource "aws_instance" "order_book_app" {
     user_data = <<-EOF
     #!/bin/bash
     yum update -y
+    wget -O /etc/yum.repos.d/snapd.repo https://bboozzoo.github.io/snapd-amazon-linux/al2023/snapd.repo
+    dnf install snapd -y
+    systemctl enable --now snapd.socket
+    ln -s /var/lib/snapd/snap /snap
     yum install httpd -y
     systemctl start httpd
     systemctl enable httpd
@@ -281,4 +299,8 @@ output "order_book_public_url" {
 
 output "bastion_host_ip" {
     value = aws_instance.bastion_host.public_ip
+}
+
+output "order_book_private_ip" {
+    value = aws_instance.order_book_app.private_ip
 }
