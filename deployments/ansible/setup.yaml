@@ -53,4 +53,62 @@
         group: microk8s
         mode: '0700'
 
+    - name: Enable Microk8s hostpath-storage
+      command: microk8s enable hostpath-storage
+
+- name: Deploy User Manager App in MicroK8s
+  hosts: order_book_server
+  become: yes
+  tasks:
+    - name: Refresh ECR token in k8s
+      shell: |
+        DOCKER_PASSWORD=$(aws ecr get-login-password --region us-east-1) 
+        microk8s kubectl create secret docker-registry ecr-registry-key \
+        --docker-server=https://343218189535.dkr.ecr.us-east-1.amazonaws.com \
+        --docker-username=AWS \
+        --docker-password=$DOCKER_PASSWORD  \
+        --dry-run=client -o yaml | microk8s kubectl apply -f -
+      register: secret_output
+
+    - name: Copy Manifest to EC2
+      copy:
+        src: ./usermanager-app/usermanager-deployment.yaml
+        dest: /home/ec2-user/usermanager-deployment.yaml
+        owner: ec2-user
+        mode: '0644'
+
+    - name: Copy env to EC2
+      copy:
+        src: ./usermanager-app/.env
+        dest: /home/ec2-user/.env
+        owner: ec2-user
+        mode: '0644'
+
+    - name: Copy db schema to EC2
+      copy:
+        src: ./usermanager-app/schema.sql
+        dest: /home/ec2-user/schema.sql
+        owner: ec2-user
+        mode: '0644'
+
+    - name: Create postgres initi configmap from schema file
+      shell: |
+        microk8s kubectl create configmap pg-init-script \
+        --from-file=schema.sql \
+        --dry-run=client -o yaml | microk8s kubectl apply -f -
+
+    - name: Deploy env file as Kube secret
+      shell: |
+        microk8s kubectl create secret generic usermanager-secrets \
+        --from-env-file=/home/ec2-user/.env \
+        --dry-run=client -o yaml | microk8s kubectl apply -f -
+
+    - name: Apply k8s Manifest
+      command: microk8s kubectl apply -f /home/ec2-user/usermanager-deployment.yaml
+      register: k8s_output
+
+    - name: Show Output
+      debug:
+        msg: "{{ k8s_output.stdout }}"
+
 

@@ -1,3 +1,36 @@
+resource "aws_iam_role" "ob_ec2_role_jayamal" {
+    name = "ob_ec2_role_jayamal"
+
+    assume_role_policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+        {
+            Action = "sts:AssumeRole"
+            Effect = "Allow"
+            Sid    = ""
+            Principal = {
+            Service = "ec2.amazonaws.com"
+            }
+        },
+        ]
+    })
+
+    tags = {
+        Name = "ob_ec2_role_jayamal"
+        Owner = "jayamal"
+    }
+}
+
+resource "aws_iam_role_policy_attachment" "ecr_read_only_jayamal" {
+    role = aws_iam_role.ob_ec2_role_jayamal.name
+    policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+resource "aws_iam_instance_profile" "ob_ec2_profile_jayamal" {
+    name = "ob_ec2_profile_jayamal"
+    role = aws_iam_role.ob_ec2_role_jayamal.name
+}
+
 resource "aws_vpc" "jayamal_ob_vpc" {
     cidr_block = "10.0.0.0/16"
 
@@ -106,6 +139,13 @@ resource "aws_security_group" "jayamal_bastion_sg" {
         cidr_blocks = ["0.0.0.0/0"]
     }
 
+    ingress {
+        from_port = 8443
+        to_port = 8443
+        protocol = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+
     egress {
         from_port = 0
         to_port = 0
@@ -131,8 +171,8 @@ resource "aws_security_group" "jayamal_app_sg" {
     }
 
     ingress {
-        from_port = 8080
-        to_port = 8080
+        from_port = 30088
+        to_port = 30088
         protocol = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
     }
@@ -140,6 +180,13 @@ resource "aws_security_group" "jayamal_app_sg" {
     ingress {
         from_port = 22
         to_port = 22
+        protocol = "tcp"
+        cidr_blocks = ["10.0.1.0/24"]
+    }
+
+    ingress {
+        from_port = 8443
+        to_port = 8443
         protocol = "tcp"
         cidr_blocks = ["10.0.1.0/24"]
     }
@@ -191,6 +238,7 @@ resource "aws_instance" "order_book_app" {
     security_groups = [aws_security_group.jayamal_app_sg.id]
     instance_type = var.instance_type
     key_name = aws_key_pair.ec2_key_pair.key_name
+    iam_instance_profile = aws_iam_instance_profile.ob_ec2_profile_jayamal.name
     user_data = <<-EOF
     #!/bin/bash
     yum update -y
@@ -224,7 +272,7 @@ resource "aws_lb" "jayamal_lb" {
 
 resource "aws_lb_target_group" "jayamal_app_tg_8080" {
     name = "jayamal-app-tg-8080"
-    port = 8080
+    port = 30088
     protocol = "TCP"
     vpc_id = aws_vpc.jayamal_ob_vpc.id
 
@@ -249,7 +297,7 @@ resource "aws_lb_target_group" "jayamal_app_tg_80" {
 resource "aws_lb_target_group_attachment" "jayamal_lb_attach_8080" {
     target_group_arn = aws_lb_target_group.jayamal_app_tg_8080.arn
     target_id = aws_instance.order_book_app.id
-    port = 8080
+    port = 30088
 }
 
 resource "aws_lb_target_group_attachment" "jayamal_lb_attach_80" {
@@ -291,6 +339,20 @@ resource "aws_lb_listener" "jayamal_lb_listner_8080" {
 resource "aws_key_pair" "ec2_key_pair" {
     key_name = var.key_name
     public_key = var.public_key
+}
+
+resource "aws_ecr_repository" "jayamal_ecr_repo" {
+  name                 = "jayamal_ecr_repo"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+      Name = "jayamal_ecr_repo"
+      Author = "Jayamal"
+    }
 }
 
 output "order_book_public_url" {
