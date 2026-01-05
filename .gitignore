@@ -4,4 +4,5 @@
 terraform.tfstate
 deployments/terraform/.terraform/
 deployments/terraform/terraform.tfstate
+deployments/terraform/terraform.lock.hcl
 deployments/terraform/terraform.tfstate.backup

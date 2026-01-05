@@ -128,6 +128,30 @@ resource "aws_route_table_association" "jayamal_private_subnet_assoc" {
     route_table_id = aws_route_table.jayamal_private_route_table.id
 }
 
+resource "aws_security_group" "jayamal_lb_sg" {
+    name = "jayamal-lb-sg"
+    vpc_id = aws_vpc.jayamal_ob_vpc.id
+
+    ingress {
+        from_port = 8080
+        to_port = 8080
+        protocol = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+
+    egress {
+        from_port = 0
+        to_port = 0
+        protocol = "-1"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+
+    tags = {
+      Name = "jayamal_lb_sg"
+      Author = "Jayamal"
+    }
+}
+
 resource "aws_security_group" "jayamal_bastion_sg" {
     name = "jayamal-bastion-sg"
     vpc_id = aws_vpc.jayamal_ob_vpc.id
@@ -135,13 +159,6 @@ resource "aws_security_group" "jayamal_bastion_sg" {
     ingress {
         from_port = 22
         to_port = 22
-        protocol = "tcp"
-        cidr_blocks = ["0.0.0.0/0"]
-    }
-
-    ingress {
-        from_port = 8443
-        to_port = 8443
         protocol = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
     }
@@ -164,31 +181,19 @@ resource "aws_security_group" "jayamal_app_sg" {
     vpc_id = aws_vpc.jayamal_ob_vpc.id
 
     ingress {
-        from_port = 80
-        to_port = 80
-        protocol = "tcp"
-        cidr_blocks = ["0.0.0.0/0"]
-    }
-
-    ingress {
         from_port = 30088
         to_port = 30088
         protocol = "tcp"
-        cidr_blocks = ["0.0.0.0/0"]
+        security_groups = [aws_security_group.jayamal_lb_sg.id]
+        # cidr_blocks = ["0.0.0.0/0"]
     }
 
     ingress {
         from_port = 22
         to_port = 22
         protocol = "tcp"
-        cidr_blocks = ["10.0.1.0/24"]
-    }
-
-    ingress {
-        from_port = 8443
-        to_port = 8443
-        protocol = "tcp"
-        cidr_blocks = ["10.0.1.0/24"]
+        # cidr_blocks = ["10.0.1.0/24"]
+        security_groups = [aws_security_group.jayamal_bastion_sg.id]
     }
 
     ingress { // to allow internal self routes for k8s
@@ -196,13 +201,6 @@ resource "aws_security_group" "jayamal_app_sg" {
         to_port = 0
         protocol = "-1"
         self = true
-    }
-
-    ingress { // to run kubectl commands from local machine
-        from_port = 16443
-        to_port = 16443
-        protocol = "tcp"
-        cidr_blocks = ["10.0.1.0/24"]
     }
 
     egress {
@@ -222,7 +220,7 @@ resource "aws_instance" "bastion_host" {
     ami = var.ami
     subnet_id = aws_subnet.jayamal_ob_public_subnet.id
     instance_type = var.instance_type
-    security_groups = [aws_security_group.jayamal_bastion_sg.id]
+    vpc_security_group_ids = [aws_security_group.jayamal_bastion_sg.id]
     associate_public_ip_address = true
     key_name = aws_key_pair.ec2_key_pair.key_name
 
@@ -235,7 +233,7 @@ resource "aws_instance" "bastion_host" {
 resource "aws_instance" "order_book_app" {
     ami = var.ami
     subnet_id = aws_subnet.jayamal_ob_private_subnet.id
-    security_groups = [aws_security_group.jayamal_app_sg.id]
+    vpc_security_group_ids = [aws_security_group.jayamal_app_sg.id]
     instance_type = var.instance_type
     key_name = aws_key_pair.ec2_key_pair.key_name
     iam_instance_profile = aws_iam_instance_profile.ob_ec2_profile_jayamal.name
@@ -262,6 +260,7 @@ resource "aws_lb" "jayamal_lb" {
     name = "jayamal-lb"
     internal = false
     load_balancer_type = "network"
+    security_groups = [aws_security_group.jayamal_lb_sg.id]
     subnets = [aws_subnet.jayamal_ob_public_subnet.id]
 
     tags = {
@@ -335,6 +334,11 @@ resource "aws_lb_listener" "jayamal_lb_listner_8080" {
       Author = "Jayamal"
     }
 }
+
+# resource "aws_key_pair" "ec2_key_pair" {
+#     key_name = var.key_name 
+#     public_key = file("~/.ssh/id_rsa.pub") 
+# }
 
 resource "aws_key_pair" "ec2_key_pair" {
     key_name = var.key_name
